@@ -1,0 +1,142 @@
+//// Script realizado para baixar dados de precipitação pluvial 
+//// Script utilizado para desenvolvimento do Pós-Doutorado no Departamento de Geografia da USP
+/// Projeto desenvolvido pela Dr. Jakeline Baratto e financiado pela FAPESP (processo: 2022/02383-3)
+
+//// Dados de precipitação pluvial do TRMM para pontos amostrais em superfícies
+
+//Pontos de coleta de dados em superfície
+
+var roi = ee.FeatureCollection('users/jakelinebarattogeo/Cananeia')
+
+//var roi = ee. FeatureCollection('users/jakelinebarattogeo/EMA-Iguape')
+
+//var roi = ee.FeatureCollection('users/jakelinebarattogeo/EMA-Paraquira');
+
+//var roi = ee.FeatureCollection('users/jakelinebarattogeo/F4-016')
+
+//var roi = ee.FeatureCollection('users/jakelinebarattogeo/F4-028')
+
+//var roi = ee.FeatureCollection('users/jakelinebarattogeo/F4-029')
+
+//var roi = ee.FeatureCollection('users/jakelinebarattogeo/F4-042')
+
+// Area de estudo
+
+//var roi =ee.FeatureCollection('users/jakelinebarattogeo/SCCI');
+print(roi)
+
+Map.addLayer(roi)
+ 
+
+// Período selecionado
+var startyear = 2020;
+var endyear = 2022;
+
+// CRIAR LISTA PARA VARIÁVEL YEARS
+var years = ee.List.sequence(startyear,endyear);
+ 
+// CRIAR LISTA DE MESES PARA UTILIZAR NAS FUNÇÕES 
+var months = ee.List.sequence(1,12);
+ 
+// DEFINIR INÍCIO E FIM 
+var startdate = ee.Date.fromYMD(startyear,1,1);
+var enddate = ee.Date.fromYMD(endyear,12,31);
+
+var precipitation = ee.ImageCollection("TRMM/3B42")
+                    .select('precipitation')
+                    .filterDate(startdate, enddate)
+                    .filterBounds(roi)
+
+print(precipitation)
+
+/*******************************CALCULO DA PRECIPITAÇÃO MENSAL ********************************/
+var precipitacao_mensal_acum =  ee.ImageCollection.fromImages(
+    
+    years.map(function (y) { //função ano
+    return months.map(function(m) {//função mês aninhada em ano
+    //Defina a variável precipitação 
+      var precipitation_month = precipitation.filter(ee.Filter.calendarRange(y, y, 'year'))//Filtro de ano
+                    .filter(ee.Filter.calendarRange(m, m, 'month'))//Filtro de mês
+                    .sum() //acumulando os dados
+                    .clip(roi);//Recortando pela área de estudo
+                    
+      return precipitation_month.set('year', y)//Encerrando a função mês
+              .set('month', m) //inserir Mês
+              .set('system:time_start', ee.Date.fromYMD(y, m, 1));//Definindo Data Ano.Mês e Dia
+                        
+    });
+  }).flatten() //empilha a coleção ano a ano, mês a mês
+              //Nivela coleções de coleções.
+);
+
+print(precipitacao_mensal_acum)
+
+/******************************Gráfico precipitação mensal************************************/
+
+var chartP = ui.Chart.image.seriesByRegion({
+    imageCollection: precipitacao_mensal_acum,//Coleção mensal 
+    regions: roi, 
+    reducer: ee.Reducer.mean(), 
+    band: 'precipitation', 
+    scale: 2500, 
+    xProperty: 'system:time_start', 
+    seriesProperty: 'NOME'})
+    .setOptions({
+      title: 'Precipitação mensal acumulada para o ponto',
+      hAxis: {title: 'Intervalo de tempo'},
+      vAxis: {title: 'P (mm)'},
+      lineWidth: 1,
+      pointSize: 5,
+      pointShape: 'square',
+      series: {
+          0:  {pointShape: 'circle',color: 'blue'},
+          1: { pointShape: 'triangle', rotation: 180, color: 'DeepSkyBlue'},
+          2: {pointShape: 'square' , color: 'SteelBlue'},
+           3: {pointShape: 'square' , color: 'Green'}
+          }}
+      )
+    .setChartType('ScatterChart');  
+
+print(chartP)
+
+/*******************************CALCULO DA PRECIPITAÇÃO ANUAL********************************/
+var precipitacao_anual_acum = ee.ImageCollection.fromImages(//Retorna a coleção de imagens contendo as imagens fornecidas.
+    years.map(function (year) {
+    
+    var anual = precipitation.filter(ee.Filter.calendarRange(year, year, 'year'))
+        .sum() // acumula os dados anuais 
+        .clip(roi); //recorte para área de estudo
+    return anual
+        .set('year', year)
+        .set('system:time_start', ee.Date.fromYMD(year, 1, 1))//apenas para termos uma data
+        ;
+}));
+
+print('1 - Coleção de imagens CHIRPS anual',precipitacao_anual_acum )
+
+/******************************Gráfico precipitação anual************************************/
+
+var chartP_anual = ui.Chart.image.seriesByRegion({
+    imageCollection: precipitacao_anual_acum, //coleção
+    regions: roi,  //minha região e featureCollection
+    reducer: ee.Reducer.mean(), //Redutores
+    band: 'precipitation', //Banda em caso de existir mais de uma você poderá escolher
+    scale: 2500, //Escala para gerar o gráfico
+    xProperty: 'system:time_start',  //propriedade ex: index, date ou system:time_start
+    seriesProperty: 'NOME'}) //Propriedade da Feature (Label, Nome, NOME, classe...etc)
+    .setOptions({ //opções para o gráfico
+      title: 'Precipitação acumulada anual por Município', //título
+      hAxis: {title: 'Intervalo de tempo'}, //eixo horizontal
+      vAxis: {title: 'P (mm)'}, //eixo vertical
+      lineWidth: 1, //largura da linha
+      pointSize: 5, //tamanho do ponto
+      series: {
+        0:  {color: 'blue'},//Cor 1
+        1: {color: 'DeepSkyBlue'},//Cor 2 
+        2: {color: 'SteelBlue'},// Cor 3
+        3: {color: 'Green'} // Cor 4
+          }}
+      )
+    .setChartType('ColumnChart');  //Estilo do gráfico tipos 'ScatterChart' e 'LineChart'...
+
+print(chartP_anual) //imprimir o gráfico
